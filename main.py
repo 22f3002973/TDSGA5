@@ -1,4 +1,4 @@
-from fastapi import FastAPI
+from fastapi import FastAPI,Request
 from pydantic import BaseModel
 from urllib.parse import urlparse
 import os
@@ -31,61 +31,54 @@ def charge(req: RequestBody):
 
     return {"charge": round(ans, 2)}
 
+class ToolRequest(BaseModel):
+    tool: str
+    command: str | None = None
+    path: str | None = None
+    content: str | None = None
+    method: str | None = None
+    url: str | None = None
+
+
 @app.post("/check")
-async def check(req: Request):
+def check(body: ToolRequest):
 
-    body = await req.json()
-
-    tool = body["tool"]
-
-    #################################
-    # BASH
-    #################################
+    tool = body.tool
 
     if tool == "bash":
 
-        cmd = body["command"]
-
-        cmd = cmd.replace("$HOME", "/home/agent")
+        cmd = (body.command or "").replace("$HOME", "/home/agent")
         cmd = cmd.replace("~", "/home/agent")
 
         if "/home/agent/.npmrc" in cmd:
             return {
-                "decision":"block",
-                "reason":"Reading protected secret"
+                "decision": "block",
+                "reason": "Reading protected secret"
             }
 
         return {
-            "decision":"allow",
-            "reason":"Command allowed"
+            "decision": "allow",
+            "reason": "Command allowed"
         }
 
-    #################################
-    # WRITE
-    #################################
+    elif tool == "write_file":
 
-    elif tool=="write_file":
-
-        p = os.path.normpath(body["path"])
+        p = os.path.normpath(body.path or "")
 
         if p.startswith("/srv/reports"):
             return {
-                "decision":"allow",
-                "reason":"Inside reports directory"
+                "decision": "allow",
+                "reason": "Inside reports directory"
             }
 
         return {
-            "decision":"block",
-            "reason":"Write outside allowed directory"
+            "decision": "block",
+            "reason": "Write outside allowed directory"
         }
 
-    #################################
-    # HTTP
-    #################################
+    elif tool == "http_request":
 
-    elif tool=="http_request":
-
-        host = urlparse(body["url"]).hostname
+        host = urlparse(body.url or "").hostname
 
         allowed = {
             "registry.npmjs.org",
@@ -94,18 +87,16 @@ async def check(req: Request):
 
         if host in allowed:
             return {
-                "decision":"allow",
-                "reason":"Allowed host"
+                "decision": "allow",
+                "reason": "Allowed host"
             }
 
         return {
-            "decision":"block",
-            "reason":"Host not allowed"
+            "decision": "block",
+            "reason": "Host not allowed"
         }
 
-    #################################
-
     return {
-        "decision":"allow",
-        "reason":"Unknown tool"
+        "decision": "allow",
+        "reason": "Unknown tool"
     }
